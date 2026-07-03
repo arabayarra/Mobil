@@ -1,10 +1,14 @@
-import React, { useMemo } from 'react';
-import { Alert, Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
+import React, { useMemo, useState } from 'react';
+import { Pressable, ScrollView, StyleSheet, Text, View } from 'react-native';
 import { computeNet, computeSettlements } from '../balances';
 import { formatDate, formatTL } from '../format';
 import { useStore } from '../store';
 import { memberColor, useTheme } from '../theme';
-import { Avatar, PrimaryButton, SectionTitle } from '../ui';
+import { Avatar, ConfirmDialog, PrimaryButton, SectionTitle } from '../ui';
+
+type PendingDelete =
+  | { kind: 'group' }
+  | { kind: 'expense'; expenseId: string; title: string };
 
 export function GroupDetailScreen({ groupId, onAddExpense, onBack }: {
   groupId: string;
@@ -13,6 +17,7 @@ export function GroupDetailScreen({ groupId, onAddExpense, onBack }: {
 }) {
   const theme = useTheme();
   const { groups, expenses, deleteGroup, deleteExpense } = useStore();
+  const [pendingDelete, setPendingDelete] = useState<PendingDelete | null>(null);
 
   const group = groups.find((g) => g.id === groupId);
   const groupExpenses = useMemo(
@@ -28,25 +33,16 @@ export function GroupDetailScreen({ groupId, onAddExpense, onBack }: {
 
   if (!group) return null;
 
-  const confirmDeleteGroup = () => {
-    Alert.alert('Grubu sil', `"${group.name}" ve tüm harcamaları silinecek. Emin misiniz?`, [
-      { text: 'Vazgeç', style: 'cancel' },
-      {
-        text: 'Sil',
-        style: 'destructive',
-        onPress: () => {
-          deleteGroup(group.id);
-          onBack();
-        },
-      },
-    ]);
-  };
-
-  const confirmDeleteExpense = (expenseId: string, title: string) => {
-    Alert.alert('Harcamayı sil', `"${title}" silinsin mi?`, [
-      { text: 'Vazgeç', style: 'cancel' },
-      { text: 'Sil', style: 'destructive', onPress: () => deleteExpense(expenseId) },
-    ]);
+  const runPendingDelete = () => {
+    if (!pendingDelete) return;
+    if (pendingDelete.kind === 'group') {
+      deleteGroup(group.id);
+      setPendingDelete(null);
+      onBack();
+    } else {
+      deleteExpense(pendingDelete.expenseId);
+      setPendingDelete(null);
+    }
   };
 
   return (
@@ -56,7 +52,7 @@ export function GroupDetailScreen({ groupId, onAddExpense, onBack }: {
           <Pressable onPress={onBack} hitSlop={12}>
             <Text style={{ color: theme.accent, fontSize: 16, fontWeight: '600' }}>‹ Gruplar</Text>
           </Pressable>
-          <Pressable onPress={confirmDeleteGroup} hitSlop={12}>
+          <Pressable onPress={() => setPendingDelete({ kind: 'group' })} hitSlop={12}>
             <Text style={{ color: theme.negative, fontSize: 14, fontWeight: '600' }}>Grubu sil</Text>
           </Pressable>
         </View>
@@ -122,7 +118,7 @@ export function GroupDetailScreen({ groupId, onAddExpense, onBack }: {
             {groupExpenses.map((e) => (
               <Pressable
                 key={e.id}
-                onLongPress={() => confirmDeleteExpense(e.id, e.title)}
+                onLongPress={() => setPendingDelete({ kind: 'expense', expenseId: e.id, title: e.title })}
                 style={[styles.expenseRow, { backgroundColor: theme.surface, borderColor: theme.line }]}
               >
                 <Avatar name={e.paidBy} color={memberColor(theme, group.members, e.paidBy)} size={34} />
@@ -147,6 +143,22 @@ export function GroupDetailScreen({ groupId, onAddExpense, onBack }: {
       <View style={{ paddingHorizontal: 20, paddingBottom: 8 }}>
         <PrimaryButton label="Harcama ekle" onPress={onAddExpense} theme={theme} />
       </View>
+
+      <ConfirmDialog
+        visible={pendingDelete !== null}
+        title={pendingDelete?.kind === 'group' ? 'Grubu sil' : 'Harcamayı sil'}
+        message={
+          pendingDelete?.kind === 'group'
+            ? `"${group.name}" ve tüm harcamaları silinecek. Emin misiniz?`
+            : pendingDelete?.kind === 'expense'
+              ? `"${pendingDelete.title}" silinsin mi?`
+              : ''
+        }
+        confirmLabel="Sil"
+        onCancel={() => setPendingDelete(null)}
+        onConfirm={runPendingDelete}
+        theme={theme}
+      />
     </View>
   );
 }
